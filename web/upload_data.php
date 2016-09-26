@@ -22,6 +22,7 @@ if (sizeof($_GET) > 0) {
   $sessuploadid = "";
   $sesstime = "0";
   $sessprofilequery = "";
+  $updatefields = array();
 //print_r($_GET);
   foreach ($_GET as $key => $value) {
     if (preg_match("/^k/", $key)) {
@@ -34,6 +35,32 @@ if (sizeof($_GET) > 0) {
         $values[] = $value;
       }
       $submitval = 1;
+    } else if (preg_match("/^user/", $key)) {
+      $matches = array();
+      $matched = preg_match("/^user(Unit|ShortName|FullName)([a-f0-9]+)$/", $key, $matches);
+      if ($matched) {
+        $type = $matches[1];
+        $pid = $matches[2];
+        $pid = ltrim($pid, '0');  // the actual data submission has leading 0s trimmed
+        $field = null;
+        if ($type == "Unit") {
+          $field = 'units';
+        } else if ($type == "ShortName" ) {
+          // don't do anything with this one
+        } else if ($type == "FullName" ) {
+          $field = 'description';
+        }
+
+        if ($field) {
+          $updatefield = quote_name($field) . "=" . quote_value($value);
+          if (array_key_exists($pid, $updatefields)) {
+            $updatefields[$pid] = $updatefields[$pid] . ", " . $updatefield;
+          } else {
+            $updatefields[$pid] = $updatefield;
+          }
+        }
+      }
+      $submitval = 0;
     } else if (in_array($key, array("v", "eml", "time", "id", "session"))) {
       // Keep non k* columns listed here
       if ($key == 'session') {
@@ -59,18 +86,40 @@ if (sizeof($_GET) > 0) {
     }
     // If the field doesn't already exist, add it to the database
     if (!in_array($key, $dbfields) and $submitval == 1) {
-      if ( is_float($value) ) {
+      if ( is_numeric($value) ) {
         // Add field if it's a float
         $sqlalter = "ALTER TABLE $db_table ADD ".quote_name($key)." float NOT NULL default '0'";
-        $sqlalterkey = "INSERT INTO $db_keys_table (id, description, type, populated) VALUES (".quote_value($key).", ".quote_value($key).", 'float', '1')";
+        $sqlalterkey = "INSERT INTO $db_keys_table (id, description, type, populated) VALUES (".quote_value($key).", ".quote_value($key).", 'float', '1')
+                        ON DUPLICATE KEY UPDATE type='float', populated='1'";
       } else {
         // Add field if it's a string, specifically varchar(255)
         $sqlalter = "ALTER TABLE $db_table ADD ".quote_name($key)." VARCHAR(255) NOT NULL default 'Not Specified'";
-        $sqlalterkey = "INSERT INTO $db_keys_table (id, description, type, populated) VALUES (".quote_value($key).", ".quote_value($key).", 'varchar(255)', '1')";
+        $sqlalterkey = "INSERT INTO $db_keys_table (id, description, type, populated) VALUES (".quote_value($key).", ".quote_value($key).", 'varchar(255)', '1')
+                        ON DUPLICATE KEY UPDATE type='varchar(255)', populated='1'";
       }
       mysql_query($sqlalter, $con) or die(mysql_error());
       mysql_query($sqlalterkey, $con) or die(mysql_error());
+      $dbfields[] = $key;	// remember that we added the field to the database
     }
+  }
+  // Update any names and units from the app
+  foreach ($updatefields as $pid=>$sqlset) {
+    $id = quote_value("k".$pid);
+    if (!in_array("k".$pid, $dbfields)) {
+      if (strpos($sqlset, quote_name('description') . "=") === false) {
+        // creating a new torque key, but we don't know its description
+        // use the id as the description
+        $sqlupdate = "INSERT INTO $db_keys_table SET id=$id, description=$id, type='varchar(255)', populated='0', $sqlset
+                      ON DUPLICATE KEY UPDATE $sqlset";
+      } else {
+        $sqlupdate = "INSERT INTO $db_keys_table SET id=$id, type='varchar(255)', populated='0', $sqlset
+                      ON DUPLICATE KEY UPDATE $sqlset";
+      }
+    } else {
+      $sqlupdate = "UPDATE $db_keys_table SET $sqlset WHERE id=$id";
+    }
+//echo $sqlupdate."\n";
+    mysql_query($sqlupdate, $con) or die(mysql_error());
   }
   // The way session uploads work, there's a separate HTTP call for each datapoint.  This is why raw logs is
   //  so huge, and has so much repeating data. This is my attempt to flatten the redundant data into the
