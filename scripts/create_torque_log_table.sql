@@ -28,6 +28,7 @@ CREATE TABLE `raw_logs` (
   `profileFuelCost` float NOT NULL DEFAULT '0',
   `notice` varchar(255),
   `noticeClass` varchar(255),
+/*
   `k10` float NOT NULL DEFAULT '0',
   `k11` float NOT NULL DEFAULT '0',
   `k12` float NOT NULL DEFAULT '0',
@@ -172,6 +173,7 @@ CREATE TABLE `raw_logs` (
   `kff5201` float NOT NULL DEFAULT '0',
   `kff5202` float NOT NULL DEFAULT '0',
   `kff5203` float NOT NULL DEFAULT '0',
+*/
   KEY `session` (`session`,`id`),
   KEY `id` (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8;
